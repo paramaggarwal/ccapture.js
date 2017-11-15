@@ -703,25 +703,30 @@ CCGIFEncoder.prototype.save = function( callback ) {
         return _performanceTime;
       };
 
-      function hookCurrentTime() {
-        if (!this._hooked) {
-          this._hooked = true;
-          this._hookedTime = this.currentTime || 0;
-          this.pause();
-          media.push(this);
+      if (_settings.syncVideo) {
+        _settings.syncVideo.pause();
+        _settings.syncVideo.on("seeked", _callCallbacks);
+      } else {
+        function hookCurrentTime() {
+          if (!this._hooked) {
+            this._hooked = true;
+            this._hookedTime = this.currentTime || 0;
+            this.pause();
+            media.push(this);
+          }
+          return this._hookedTime + _settings.startTime;
         }
-        return this._hookedTime + _settings.startTime;
-      }
 
-      try {
-        Object.defineProperty(HTMLVideoElement.prototype, "currentTime", {
-          get: hookCurrentTime
-        });
-        Object.defineProperty(HTMLAudioElement.prototype, "currentTime", {
-          get: hookCurrentTime
-        });
-      } catch (err) {
-        _log(err);
+        try {
+          Object.defineProperty(HTMLVideoElement.prototype, "currentTime", {
+            get: hookCurrentTime
+          });
+          Object.defineProperty(HTMLAudioElement.prototype, "currentTime", {
+            get: hookCurrentTime
+          });
+        } catch (err) {
+          _log(err);
+        }
       }
     }
 
@@ -756,6 +761,12 @@ CCGIFEncoder.prototype.save = function( callback ) {
       window.Date.prototype.getTime = _oldGetTime;
       window.Date.now = _oldNow;
       window.performance.now = _oldPerformanceNow;
+
+      if (_settings.syncVideo) {
+        _settings.syncVideo.removeEventListener("seeked", _callCallbacks);
+        _settings.syncVideo.play();
+        _callCallbacks();
+      }
     }
 
     function _updateTime() {
@@ -867,22 +878,7 @@ CCGIFEncoder.prototype.save = function( callback ) {
       }
     }
 
-    function _process() {
-      var step = 1000 / _settings.framerate;
-      var dt =
-        (_frameCount + _intermediateFrameCount / _settings.motionBlurFrames) *
-        step;
-
-      _time = _startTime + dt;
-      _performanceTime = _performanceStartTime + dt;
-
-      media.forEach(function(v) {
-        v._hookedTime = dt / 1000;
-      });
-
-      _updateTime();
-      _log("Frame: " + _frameCount + " " + _intermediateFrameCount);
-
+    function _callCallbacks() {
       for (var j = 0; j < _timeouts.length; j++) {
         if (_time >= _timeouts[j].triggerTime) {
           _call(_timeouts[j].callback);
@@ -905,6 +901,29 @@ CCGIFEncoder.prototype.save = function( callback ) {
         _call(cb, _time - g_startTime);
       });
       _requestAnimationFrameCallbacks = [];
+    }
+
+    function _process() {
+      var step = 1000 / _settings.framerate;
+      var dt =
+        (_frameCount + _intermediateFrameCount / _settings.motionBlurFrames) *
+        step;
+
+      _time = _startTime + dt;
+      _performanceTime = _performanceStartTime + dt;
+
+      media.forEach(function(v) {
+        v._hookedTime = dt / 1000;
+      });
+
+      _updateTime();
+      _log("Frame: " + _frameCount + " " + _intermediateFrameCount);
+
+      if (_settings.syncVideo) {
+        _settings.syncVideo.currentTime += step / 1000;
+      } else {
+        _callCallbacks();
+      }
     }
 
     function _save(callback) {
